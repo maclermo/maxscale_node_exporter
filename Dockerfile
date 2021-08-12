@@ -11,4 +11,4 @@ COPY *.go ./
 
 RUN go build -o /maxscale_exporter
 
-ENTRYPOINT ["/maxscale_exporter", "-path=/etc/node_exporter/maxscale.json"]
+ENTRYPOINT ["/maxscale_exporter -path=/etc/node_exporter/maxscale.json"]
