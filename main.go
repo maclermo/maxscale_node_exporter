@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
+	"flag"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -143,15 +143,10 @@ func (ServerCollector *ServerCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (ServerCollector *ServerCollector) Collect(ch chan<- prometheus.Metric) {
-	data, err := getStatsServer(configHost, configPort, configUsername, configPassword, 10)
-
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	data := getServer()
 
 	for i := 0; i < len(data.Data); i++ {
 		ch <- prometheus.MustNewConstMetric(ServerCollector.ActiveOperations, prometheus.GaugeValue, float64(data.Data[i].Attributes.Statistics.ActiveOperations), data.Data[i].ID)
-		//ch <- prometheus.MustNewConstMetric(ServerCollector.AdaptiveAvgSelectTime, prometheus.GaugeValue, float64(data.Data[i].Attributes.Statistics.AdaptiveAvgSelectTime), data.Data[i].ID)
 		ch <- prometheus.MustNewConstMetric(ServerCollector.ConnectionPoolEmpty, prometheus.GaugeValue, float64(data.Data[i].Attributes.Statistics.ConnectionPoolEmpty), data.Data[i].ID)
 		ch <- prometheus.MustNewConstMetric(ServerCollector.Connections, prometheus.GaugeValue, float64(data.Data[i].Attributes.Statistics.Connections), data.Data[i].ID)
 		ch <- prometheus.MustNewConstMetric(ServerCollector.MaxConnections, prometheus.GaugeValue, float64(data.Data[i].Attributes.Statistics.MaxConnections), data.Data[i].ID)
@@ -196,11 +191,7 @@ func (ServiceCollector *ServiceCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (ServiceCollector *ServiceCollector) Collect(ch chan<- prometheus.Metric) {
-	data, err := getStatsService(configHost, configPort, configUsername, configPassword, 10)
-
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	data := getService()
 
 	for i := 0; i < len(data.Data); i++ {
 		ch <- prometheus.MustNewConstMetric(ServiceCollector.Queries, prometheus.GaugeValue, float64(data.Data[i].Attributes.RouterDiagnostics.Queries), data.Data[i].ID)
@@ -218,102 +209,56 @@ func (ServiceCollector *ServiceCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-func getStatsServer(host string, port int, username string, password string, timeout int) (Server, error) {
-	client := http.Client{
-		Timeout: time.Second * time.Duration(timeout),
-	}
-
-	url := host + ":" + strconv.Itoa(port) + "/v1/servers"
-
-	req, err := http.NewRequest("GET", url, nil)
-
-	if err != nil {
-		return Server{}, errors.New(err.Error())
-	}
-
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Content-Type", "application/json")
-	req.SetBasicAuth(username, password)
-
-	res, err := client.Do(req)
-
-	if err != nil {
-		return Server{}, errors.New(err.Error())
-	}
-
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return Server{}, errors.New(err.Error())
-	}
-
+func getServer() Server {
+	data := getHttp("servers")
 	var server Server
-
-	errJson := json.Unmarshal(body, &server)
-
-	if errJson != nil {
-		return Server{}, errors.New(errJson.Error())
-	}
-
-	return server, nil
+	json.Unmarshal(data, &server)
+	return server
 }
 
-func getStatsService(host string, port int, username string, password string, timeout int) (Service, error) {
+func getService() Service {
+	data := getHttp("services")
+	var service Service
+	json.Unmarshal(data, &service)
+	return service
+}
+
+func getHttp(path string) []byte {
 	client := http.Client{
-		Timeout: time.Second * time.Duration(timeout),
+		Timeout: time.Second * 10,
 	}
 
-	url := host + ":" + strconv.Itoa(port) + "/v1/services"
+	url := configHost + ":" + strconv.Itoa(configPort) + "/v1/" + path
 
-	req, err := http.NewRequest("GET", url, nil)
-
-	if err != nil {
-		return Service{}, errors.New(err.Error())
-	}
+	req, _ := http.NewRequest("GET", url, nil)
 
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Content-Type", "application/json")
-	req.SetBasicAuth(username, password)
+	req.SetBasicAuth(configUsername, configPassword)
 
 	res, err := client.Do(req)
-
 	if err != nil {
-		return Service{}, errors.New(err.Error())
+		log.Fatal("ERROR: Cannot open path ", url)
 	}
 
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, _ := ioutil.ReadAll(res.Body)
 
-	if err != nil {
-		return Service{}, errors.New(err.Error())
-	}
+	log.Println("[LOG]   Served", url)
 
-	var service Service
-
-	errJson := json.Unmarshal(body, &service)
-
-	if errJson != nil {
-		return Service{}, errors.New(errJson.Error())
-	}
-
-	return service, nil
+	return body
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		log.Fatal("Usage: ./main path_of_config_file")
-		return
-	}
+	var pathArg string
 
-	secretsPath := os.Args[1]
+	flag.StringVar(&pathArg, "path", "", "Path to json configuration file")
+	flag.Parse()
 
-	jsonConfig, err := os.Open(secretsPath)
-
+	jsonConfig, err := os.Open(pathArg)
 	if err != nil {
-		log.Fatal("ERROR: Cannot open file", secretsPath)
+		log.Fatal("[ERROR] Cannot open file", pathArg)
 		return
 	}
 
@@ -324,9 +269,8 @@ func main() {
 	var config Config
 
 	errJson := json.Unmarshal(configBytes, &config)
-
 	if errJson != nil {
-		log.Fatal(errJson)
+		log.Fatal("[ERROR] Cannot parse json configuration file")
 	}
 
 	configUsername = config.Username
@@ -336,11 +280,10 @@ func main() {
 
 	ServerCollector := newServerCollector()
 	ServiceCollector := newServiceCollector()
-
 	prometheus.MustRegister(ServerCollector)
 	prometheus.MustRegister(ServiceCollector)
 
 	http.Handle("/metrics", promhttp.Handler())
-	log.Println("Serving on port 2112 endpoint /metrics")
+	log.Println("[LOG]   Serving on port 2112 endpoint /metrics")
 	log.Fatal(http.ListenAndServe(":2112", nil))
 }
