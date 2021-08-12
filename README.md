@@ -25,13 +25,14 @@ You can create the file using a Kubernetes secret_ref.
 If using as a sidecar on Kubernetes, the hostname can be ``127.0.0.1`` and you have to specify the configuration path such as :
 
 ```bash
-./main /etc/node_exporter/maxscale.json
+./main -path=/etc/node_exporter/maxscale.json
 ```
 
 Otherwise, you will get the following error :
 
 ```bash
-❯ go run main.go
-2021/08/11 12:46:05 Usage: ./main path_of_config_file
-exit status 1
+❯ go run main.go -h
+Usage of main:
+  -path string
+    Path to json configuration file
 ```
