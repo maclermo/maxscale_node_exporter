@@ -12,7 +12,7 @@ resource "kubernetes_service" "node_exporter" {
     }
 
     port {
-      port = 2112
+      port = 9104
       name = "metrics"
     }
 
@@ -35,7 +35,7 @@ resource "kubernetes_pod" "node_exporter" {
       image_pull_policy = "IfNotPresent"
 
       port {
-        port = 2112
+        port = 9104
         name = "metrics"
       }
     }

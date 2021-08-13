@@ -284,6 +284,6 @@ func main() {
 	prometheus.MustRegister(ServiceCollector)
 
 	http.Handle("/metrics", promhttp.Handler())
-	log.Println("[LOG]   Serving on port 2112 endpoint /metrics")
-	log.Fatal(http.ListenAndServe(":2112", nil))
+	log.Println("[LOG]   Serving on port 9104 endpoint /metrics")
+	log.Fatal(http.ListenAndServe(":9104", nil))
 }
